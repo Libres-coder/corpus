@@ -53,7 +53,7 @@ def _near_duplicates(index, threshold):
     texts = {}
     for rel in index["artifacts"]:
         text = scanmod.read_text(os.path.join(index["root"], rel))
-        if text is not None and len(text) > 200:      # tiny files collide by accident
+        if text is not None and len(text) > 400:      # short files collide by accident
             texts[rel] = text
     out = []
     for a, b, score in sim.near_duplicates(texts, threshold):

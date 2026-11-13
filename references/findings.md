@@ -13,7 +13,9 @@ it could not find. *Act:* keep the one that is linked or named in an index,
 delete the other. If both are linked, fix the links first, then delete.
 
 ### duplicate-near (>= 0.85)
-Almost the same text: usually one was edited and the other was not. This is the
+Almost the same text: usually one was edited and the other was not. Only files
+longer than 400 characters are compared - below that, boilerplate provenance
+files and one-line stubs collide by accident. This is the
 most dangerous finding - two documents that disagree slightly and look equally
 authoritative.
 

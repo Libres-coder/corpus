@@ -91,8 +91,11 @@ from the files themselves on every run. There is nothing to keep in sync.
 - It does not delete, move, rename or rewrite files. It reports; you decide.
 - It does not check external links, prose style or factual accuracy.
 - It does not find two documents that say the same thing in different words -
-  near-duplicate detection is shingle-based; the report says "none found at this
-  threshold", never "no duplicates exist".
+  near-duplicate detection is shingle-based and skips files under 400
+  characters; the report says "none found at this threshold", never "no
+  duplicates exist".
+- It does not scan agent state (`.claude/`, `.cursor/`, `.projtruth/`,
+  `.remember/`) or fixtures by default; those are a separate corpus.
 - It does not replace `git`. Every decision is also a commit message.
 
 ## Design notes

@@ -96,10 +96,14 @@ More: [references/findings.md](references/findings.md),
 
 ## What it looks at
 
-Every `**/*.md` outside build/VCS directories, by default. Add globs with
-`--glob` (`--glob "**/*.mdx"`), skip directories with `--ignore`. Code is not an
-artifact, but a document's backticked paths are checked against the filesystem,
-so a document naming code that moved shows up as stale.
+Every `**/*.md` outside build, VCS and agent-state directories, by default.
+`.claude/`, `.cursor/`, `.projtruth/`, `.remember/`, `testdata/` and `fixtures/`
+are skipped: those hold skills, requirements and machine-produced evidence, which
+have their own tools and are a separate corpus. Scan them on purpose with
+`--repo ~/.claude/skills` or `--glob`.
+
+Code is not an artifact, but a document's backticked paths are checked against
+the filesystem, so a document naming code that moved shows up as stale.
 
 `report`, `find`, `dupes` and `check` never write into the scanned tree;
 `corpus scan` writes `.corpus/index.json`, which is a cache - commit it or

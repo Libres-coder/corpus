@@ -13,7 +13,11 @@ import re
 DEFAULT_GLOBS = ("**/*.md",)
 IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
                "build", "target", ".next", ".cache", ".corpus", "graphify-out",
-               ".idea", ".vscode", "vendor", "third_party", "site-packages"}
+               ".idea", ".vscode", "vendor", "third_party", "site-packages",
+               # agent state and machine-produced evidence are not documents a
+               # human maintains; scanning them produced a wall of fake orphans
+               ".claude", ".cursor", ".agents", ".projtruth", ".remember",
+               "testdata", "fixtures"}
 # Files that are part of a project's skeleton: they are never "orphans", and a
 # duplicate of one of them is always a copy problem.
 CANONICAL_NAMES = ("README.md", "SKILL.md", "LICENSE", "CHANGELOG.md",
