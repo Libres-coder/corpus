@@ -292,6 +292,79 @@ class MissingRefTests(unittest.TestCase):
                               if f["kind"] == "missing-ref"], result["findings"])
 
 
+class StaleGitTests(unittest.TestCase):
+    """A fresh clone gives every file the checkout time; history still knows
+    which document is older than the code it describes."""
+
+    GIT = shutil.which("git")
+
+    def _git(self, tmp, *args, date=None):
+        env = dict(os.environ)
+        if date is not None:
+            env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"] = str(date)
+        subprocess.run([self.GIT, "-C", tmp] + list(args), check=True,
+                       capture_output=True, env=env)
+
+    def _init(self, tmp):
+        self._git(tmp, "init", "-q")
+        self._git(tmp, "config", "user.email", "t@example.com")
+        self._git(tmp, "config", "user.name", "t")
+
+    @unittest.skipUnless(GIT, "git not installed")
+    def test_history_decides_when_checkout_mtimes_are_equal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._init(tmp)
+            mk(os.path.join(tmp, "docs", "guide.md"),
+               "# G\n\nThe cache calls `src/app.py`.\n")
+            mk(os.path.join(tmp, "src", "app.py"), "x = 1\n")
+            self._git(tmp, "add", "-A")
+            self._git(tmp, "commit", "-qm", "doc first", date=1700000000)
+            mk(os.path.join(tmp, "src", "app.py"), "x = 2\n")
+            self._git(tmp, "add", "-A")
+            self._git(tmp, "commit", "-qm", "code later", date=1700864000)
+            now = time.time()
+            for rel in ("docs/guide.md", "src/app.py"):
+                os.utime(os.path.join(tmp, *rel.split("/")), (now, now))
+            result = report.analyze(tmp, stale_days=7)
+            hits = [f for f in result["findings"] if f["kind"] == "stale"]
+            self.assertTrue(hits, result["findings"])
+            self.assertEqual(hits[0]["path"], "docs/guide.md")
+
+    @unittest.skipUnless(GIT, "git not installed")
+    def test_a_document_committed_after_the_code_is_not_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._init(tmp)
+            mk(os.path.join(tmp, "src", "app.py"), "x = 1\n")
+            mk(os.path.join(tmp, "docs", "guide.md"),
+               "# G\n\nThe cache calls `src/app.py`.\n")
+            self._git(tmp, "add", "-A")
+            self._git(tmp, "commit", "-qm", "code first", date=1700000000)
+            mk(os.path.join(tmp, "docs", "guide.md"),
+               "# G\n\nThe cache calls `src/app.py`, first paragraph.\n")
+            self._git(tmp, "add", "-A")
+            self._git(tmp, "commit", "-qm", "doc later", date=1700864000)
+            now = time.time()
+            for rel in ("docs/guide.md", "src/app.py"):
+                os.utime(os.path.join(tmp, *rel.split("/")), (now, now))
+            result = report.analyze(tmp, stale_days=7)
+            self.assertFalse([f for f in result["findings"]
+                              if f["kind"] == "stale"], result["findings"])
+
+    @unittest.skipUnless(GIT, "git not installed")
+    def test_an_uncommitted_code_edit_counts_at_its_mtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._init(tmp)
+            mk(os.path.join(tmp, "src", "app.py"), "x = 1\n")
+            mk(os.path.join(tmp, "docs", "guide.md"),
+               "# G\n\nThe cache calls `src/app.py`.\n")
+            self._git(tmp, "add", "-A")
+            self._git(tmp, "commit", "-qm", "both", date=1700000000)
+            mk(os.path.join(tmp, "src", "app.py"), "x = 2\n")   # mtime now
+            result = report.analyze(tmp, stale_days=1)
+            self.assertTrue([f for f in result["findings"]
+                             if f["kind"] == "stale"], result["findings"])
+
+
 class CliTests(unittest.TestCase):
     def test_find_and_dupes(self):
         with tempfile.TemporaryDirectory() as tmp:

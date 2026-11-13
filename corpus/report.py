@@ -99,21 +99,75 @@ def _orphans(index, back, status_data):
     return out
 
 
+def _git_paths(repo, args):
+    """NUL-separated git output as a set, or None when git cannot answer."""
+    try:
+        p = subprocess.run(["git", "-C", repo] + args, capture_output=True,
+                           timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    return set(part.decode("utf-8", "replace").replace("\\", "/")
+               for part in (p.stdout or b"").split(b"\0") if part)
+
+
+def _tracked(repo):
+    files = _git_paths(repo, ["ls-files", "-z"])
+    return files
+
+
+def _dirty(repo):
+    """Tracked paths with uncommitted changes: an edit is newer than a commit."""
+    staged = _git_paths(repo, ["diff", "--cached", "--name-only", "-z"]) or set()
+    unstaged = _git_paths(repo, ["diff", "--name-only", "-z"]) or set()
+    return staged | unstaged
+
+
+def _git_time(repo, paths):
+    """Newest commit time among paths, or None when git knows none of them."""
+    paths = [p for p in paths if p]
+    if not paths:
+        return None
+    try:
+        p = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%ct",
+                            "--"] + list(paths),
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if p.returncode != 0:
+        return None
+    raw = (p.stdout or "").strip()
+    try:
+        return float(raw.splitlines()[0]) if raw else None
+    except (ValueError, IndexError):
+        return None
+
+
 def _stale(index, days=7):
     """A document older than the code it points at, by at least `days`.
 
     Same-day drift is usually work in progress; a week of silence is drift.
     Changelogs are historical by nature and never count. A reference that no
     longer exists is not reported here - only a reference that changed.
+
+    Times come from git when the repository has them. A fresh clone gives every
+    file the checkout time, so mtimes would say nothing is ever stale - exactly
+    when the history says otherwise. A path with uncommitted changes counts at
+    its mtime instead, because the edit is newer than any commit. Outside git,
+    mtimes are all there is.
     """
     out = []
     arts = index["artifacts"]
+    repo = index["root"]
     gap = max(1, days) * 86400
+    tracked = _tracked(repo)
+    dirty = _dirty(repo) if tracked is not None else set()
     for rel, rec in arts.items():
         if not rec["refs"] or rec["kind"] == "changelog":
             continue
-        newest = 0.0
-        exists = 0
+        found = []
         for ref in rec["refs"]:
             # doc-relative first: a doc in docs/ that says `config.md` means
             # docs/config.md, not the root config.md.
@@ -121,19 +175,45 @@ def _stale(index, days=7):
                          .replace("\\", "/"),
                          os.path.normpath(ref).replace("\\", "/")):
                 absolute = (cand if os.path.isabs(cand)
-                            else os.path.join(index["root"], *cand.split("/")))
+                            else os.path.join(repo, *cand.split("/")))
                 if os.path.isabs(cand) or cand == ".." or cand.startswith("../"):
-                    found = os.path.exists(absolute)
+                    exists = os.path.exists(absolute)
                 else:
-                    found = scanmod.exists_exact(index["root"], cand)
-                if found:
-                    exists += 1
+                    exists = scanmod.exists_exact(repo, cand)
+                if exists:
+                    repo_rel = (None if os.path.isabs(cand) or cand == ".."
+                                or cand.startswith("../") else cand)
+                    found.append((repo_rel, absolute))
+                    break
+        if not found:
+            continue
+        newest = 0.0
+        clean = []
+        for cand, absolute in found:
+            if (cand is None or tracked is None or cand not in tracked
+                    or cand in dirty):
+                try:
+                    newest = max(newest, os.path.getmtime(absolute))
+                except OSError:
+                    pass
+            else:
+                clean.append(cand)
+        git_newest = _git_time(repo, clean)
+        if git_newest is not None:
+            newest = max(newest, git_newest)
+        else:
+            for cand, absolute in found:
+                if cand in clean:
                     try:
                         newest = max(newest, os.path.getmtime(absolute))
                     except OSError:
                         pass
-                    break
-        if exists and newest > rec["mtime"] + gap:
+        if newest == 0.0:
+            continue
+        doc_time = rec["mtime"]
+        if tracked is not None and rel in tracked and rel not in dirty:
+            doc_time = _git_time(repo, [rel]) or doc_time
+        if newest > doc_time + gap:
             out.append({"severity": STALE, "kind": "stale", "path": rel,
                         "detail": "code it references changed after the document "
                                   "(%s)" % time.strftime("%Y-%m-%d", time.localtime(newest)),

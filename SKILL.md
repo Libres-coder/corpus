@@ -138,7 +138,9 @@ own tools and are a separate corpus - scan them on purpose (`--repo
 ~/.claude/skills`) if that is what you want.
 
 Code is not an artifact, but a document's backticked paths are checked against
-the filesystem: a path that *changed* makes the document stale. A path that no
+the filesystem: a path that *changed* makes the document stale. With git, the
+comparison uses commit times, so a fresh clone - where every mtime is the
+checkout time - still reports a document its code has outgrown. A path that no
 longer exists at all is not reported - the document may legitimately describe
 something that was removed.
 
@@ -152,8 +154,9 @@ something that was removed.
   fetched.
 - A prose mention (`see references/x.md`) counts as a reference, which lowers
   the orphan rate rather than raising false alarms.
-- Staleness is mtime-based with a 7-day grace period (`--stale-days`); a
-  document touched for an unrelated reason looks fresh.
+- Staleness uses git commit times for tracked paths and mtimes for uncommitted
+  edits and non-git trees, with a 7-day grace period (`--stale-days`); a
+  document touched for an unrelated reason can still look fresh.
 - It does not merge, split, move or delete anything, and it does not judge
   whether a document is correct - only whether it is linked, duplicated, or out
   of date.

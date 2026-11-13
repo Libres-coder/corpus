@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.8] - 2026-11-14
+
+### Fixed
+- **Staleness is decided from git history when there is one.** A fresh clone
+  gives every file the checkout time, so mtime-based staleness reported nothing
+  in CI - exactly where the check is a gate. A tracked document now counts from
+  its last commit, and a referenced file from its newest commit; a path with
+  uncommitted changes counts at its mtime, because the edit is newer than any
+  commit. Non-git trees keep the mtime behavior. Three tests pin the cases
+  (code committed after the doc, doc after the code, an uncommitted edit).
+
 ## [0.1.7] - 2026-11-14
 
 ### Fixed

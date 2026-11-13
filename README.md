@@ -88,6 +88,11 @@ default `**/*.md`; `--ignore` adds a directory to skip.
 | **stale** | true when written, not now | the code it names changed a week later; near-duplicate 70-85% | fails `check --strict` |
 | **noise** | nothing wrong, too much | orphan, scratch file, directory with no index | reported |
 
+Staleness comes from git history when the repository has one: a tracked
+document counts from its last commit and a referenced file from its newest
+commit, so a fresh clone (every mtime is the checkout time) still reports the
+drift. Uncommitted edits count at their mtime; non-git trees are mtime-based.
+
 Three deliberate exceptions: a broken link in a `note`/`report`-kind file (under
 `research/`, `notes/`, `drafts/`, `examples/`, `vendor/`) is noise, because those
 files quote other projects; `links-retired` only looks at active sources; and a
