@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.5] - 2026-11-14
+
+### Fixed
+- **A gitignored runtime path is not a missing reference.** A document may name
+  state the tool itself writes - "the reading goes to `.lifecycle/context.json`".
+  If that path was once committed and later removed and ignored, the
+  `missing-ref` check reported it as a dead reference on any machine where the
+  file did not happen to exist. Reported by lifecycle's CI on Linux, where three
+  documents were flagged; on Windows the ignored file existed locally and hid
+  the finding. `git check-ignore` now decides, so the check gives the same
+  answer on every platform.
+
 ## [0.1.4] - 2026-11-14
 
 ### Added

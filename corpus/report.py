@@ -166,18 +166,43 @@ def _deleted_paths(repo):
                for line in (p.stdout or "").splitlines() if line.strip())
 
 
+def _ignored_refs(repo, refs):
+    """Paths the repository tells git to ignore.
+
+    A document may name runtime state on purpose - "the reading is recorded to
+    `.lifecycle/context.json`". If that path once existed in history and was
+    later ignored, it is not a document that went missing, and on a machine
+    where the file does not happen to exist the check must not call it one.
+    """
+    if not refs:
+        return set()
+    try:
+        p = subprocess.run(["git", "-C", repo, "check-ignore", "--no-index",
+                            "--stdin"],
+                           input="\n".join(sorted(refs)),
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if p.returncode not in (0, 1):
+        return set()
+    return set(line.strip() for line in (p.stdout or "").splitlines()
+               if line.strip())
+
+
 def _missing_refs(index, repo):
     """A backticked path the repository deleted, still named by a document.
 
     Judged only against files git says once existed: a README that says "put
     your file at `src/foo.py`" has broken no promise, and the first version of
     this check flagged exactly that. A document that points at a file deleted
-    from the repository sends the reader to a dead end.
+    from the repository sends the reader to a dead end. A gitignored runtime
+    path is not that: it was never meant to be in the repository.
     """
     deleted = _deleted_paths(repo)
     if not deleted:
         return []
-    out = []
+    candidates = []
     for rel, rec in index["artifacts"].items():
         base = os.path.dirname(rel)
         for ref in rec.get("refs") or []:
@@ -188,13 +213,19 @@ def _missing_refs(index, repo):
                 continue                     # deleted once, restored since
             if ref in (rec.get("links_out") or []):
                 continue                     # the link check already reports it
-            out.append({"severity": INCORRECT, "kind": "missing-ref", "path": rel,
-                        "other": ref,
-                        "detail": "refers to `%s`, which was deleted from the "
-                                  "repository" % ref,
-                        "action": "update the reference, or restore the file - a "
-                                  "document that points at a deleted file sends "
-                                  "the reader to a dead end"})
+            candidates.append((rel, rec, ref))
+    ignored = _ignored_refs(repo, set(ref for _, _, ref in candidates))
+    out = []
+    for rel, rec, ref in candidates:
+        if ref in ignored:
+            continue
+        out.append({"severity": INCORRECT, "kind": "missing-ref", "path": rel,
+                    "other": ref,
+                    "detail": "refers to `%s`, which was deleted from the "
+                              "repository" % ref,
+                    "action": "update the reference, or restore the file - a "
+                              "document that points at a deleted file sends "
+                              "the reader to a dead end"})
     seen, uniq = set(), []
     for f in out:
         key = (f["path"], f["other"])

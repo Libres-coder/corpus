@@ -84,13 +84,15 @@ default `**/*.md`; `--ignore` adds a directory to skip.
 
 | severity | meaning | examples | gate |
 |---|---|---|---|
-| **incorrect** | a reader is misled | broken local link, byte-identical copy, near-duplicate >= 85%, active doc linking a retired one | fails `check` |
+| **incorrect** | a reader is misled | broken local link, byte-identical copy, near-duplicate >= 85%, active doc linking a retired one, a backticked path git deleted | fails `check` |
 | **stale** | true when written, not now | the code it names changed a week later; near-duplicate 70-85% | fails `check --strict` |
 | **noise** | nothing wrong, too much | orphan, scratch file, directory with no index | reported |
 
-Two deliberate exceptions: a broken link in a `note`/`report`-kind file (under
+Three deliberate exceptions: a broken link in a `note`/`report`-kind file (under
 `research/`, `notes/`, `drafts/`, `examples/`, `vendor/`) is noise, because those
-files quote other projects; and `links-retired` only looks at active sources.
+files quote other projects; `links-retired` only looks at active sources; and a
+deleted path still listed in `.gitignore` is runtime state a document may name
+on purpose, not a document that went missing.
 
 ## The state it keeps
 

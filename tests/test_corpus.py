@@ -251,6 +251,29 @@ class MissingRefTests(unittest.TestCase):
             self.assertFalse([f for f in result["findings"]
                               if f["kind"] == "missing-ref"], result["findings"])
 
+    @unittest.skipUnless(GIT, "git not installed")
+    def test_an_ignored_runtime_path_is_not_a_missing_reference(self):
+        """A document naming gitignored runtime state is not pointing at a
+        dead file. Reported by lifecycle's CI on Linux, where the ignored file
+        did not exist: three documents say the reading goes to
+        `.lifecycle/context.json`, and that path was deleted from history."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self._git(tmp, "init", "-q")
+            self._git(tmp, "config", "user.email", "t@example.com")
+            self._git(tmp, "config", "user.name", "t")
+            mk(os.path.join(tmp, ".gitignore"), ".lifecycle/\n")
+            mk(os.path.join(tmp, ".lifecycle", "context.json"), "{}\n")
+            self._git(tmp, "add", "-f", ".lifecycle/context.json")
+            self._git(tmp, "add", ".gitignore")
+            self._git(tmp, "commit", "-qm", "add")
+            self._git(tmp, "rm", "-q", ".lifecycle/context.json")
+            self._git(tmp, "commit", "-qm", "remove")
+            mk(os.path.join(tmp, "README.md"),
+               "# P\n\nThe reading is recorded to `.lifecycle/context.json`.\n")
+            result = report.analyze(tmp)
+            self.assertFalse([f for f in result["findings"]
+                              if f["kind"] == "missing-ref"], result["findings"])
+
 
 class CliTests(unittest.TestCase):
     def test_find_and_dupes(self):
