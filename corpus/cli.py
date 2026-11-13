@@ -102,7 +102,6 @@ def cmd_find(repo, args):
 
 def cmd_dupes(repo, args):
     index = scanmod.scan(repo, args.glob, args.ignore)
-    result = {"findings": [], "index": index, "status": statusmod.load(repo)}
     exact = reportmod._exact_duplicates(index)
     near = reportmod._near_duplicates(index, args.threshold)
     _utf8()

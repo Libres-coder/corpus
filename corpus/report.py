@@ -71,9 +71,9 @@ def _near_duplicates(index, threshold):
 def _orphans(index, back, status_data):
     mentioned = []
     for rel, rec in index["artifacts"].items():
-        if _is_index(rel) and not index["artifacts"][rel]["scratch"]:
+        if _is_index(rel):
             text = scanmod.read_text(os.path.join(index["root"], rel)) or ""
-            mentioned.append((rel, text))
+            mentioned.append(text)
     out = []
     for rel, rec in index["artifacts"].items():
         if _is_index(rel) or rec["kind"] in ("readme", "skill", "changelog", "contributing"):
@@ -83,7 +83,7 @@ def _orphans(index, back, status_data):
         if back.get(rel):
             continue
         base = os.path.basename(rel)
-        if any(base in text or rel in text for _src, text in mentioned):
+        if any(base in text or rel in text for text in mentioned):
             continue
         out.append({"severity": NOISE, "kind": "orphan", "path": rel,
                     "detail": "nothing links to it, no index mentions it",
@@ -135,7 +135,7 @@ def _broken(index, repo):
     return out
 
 
-def _links_to_retired(index, back, status_data):
+def _links_to_retired(index, status_data):
     out = []
     for rel, rec in index["artifacts"].items():
         if statusmod.status_of(status_data, rel) != "active":
@@ -184,7 +184,7 @@ def analyze(repo, index=None, status_data=None, threshold=0.7, stale_days=7):
     findings += _exact_duplicates(index)
     findings += _near_duplicates(index, threshold)
     findings += _broken(index, repo)
-    findings += _links_to_retired(index, back, status_data)
+    findings += _links_to_retired(index, status_data)
     findings += _stale(index, stale_days)
     findings += _orphans(index, back, status_data)
     findings += _scratch(index)

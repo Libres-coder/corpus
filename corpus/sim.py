@@ -94,10 +94,31 @@ def terms(text):
     return out
 
 
+def _parts(text):
+    toks = tokens(text, strip_code=True)
+    words = set(t for t in toks if len(t) > 1)
+    cjk = [t for t in toks if len(t) == 1 and "一" <= t <= "鿿"]
+    return words, set(cjk), set(a + b for a, b in zip(cjk, cjk[1:]))
+
+
 def score_against(query, text):
-    """Share of the query's terms that the document contains (0..1)."""
-    q = terms(query)
-    if not q:
+    """Share of the query's terms the document contains (0..1).
+
+    ASCII words and CJK bigrams count fully; CJK unigrams count half, because a
+    single character matches almost anywhere and would inflate every score.
+    """
+    qw, qc, qb = _parts(query)
+    if not (qw or qc or qb):
         return 0.0
-    d = terms(text)
-    return len(q & d) / float(len(q))
+    dw, dc, db = _parts(text)
+    num = den = 0.0
+    if qw:
+        num += len(qw & dw) / float(len(qw))
+        den += 1.0
+    if qb:
+        num += len(qb & db) / float(len(qb))
+        den += 1.0
+    if qc:
+        num += 0.5 * len(qc & dc) / float(len(qc))
+        den += 0.5
+    return num / den if den else 0.0
