@@ -73,6 +73,20 @@ class ScratchRuleTests(unittest.TestCase):
             self.assertTrue(scan.is_scratch(name), name)
 
 
+class KindAndIgnoreTests(unittest.TestCase):
+    def test_skill_md_is_a_skill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mk(os.path.join(tmp, "SKILL.md"), "# s\n\nUse when x.\n")
+            self.assertEqual(scan.scan(tmp)["artifacts"]["SKILL.md"]["kind"], "skill")
+
+    def test_tool_state_is_not_documentation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mk(os.path.join(tmp, ".lifecycle", "snapshots", "s.md"), "# snap\n")
+            mk(os.path.join(tmp, ".projtruth", "evidence", "R1-a.md"), "measured\n")
+            mk(os.path.join(tmp, "a.md"), "# a\n")
+            self.assertEqual(sorted(scan.scan(tmp)["artifacts"]), ["a.md"])
+
+
 class StatusRobustnessTests(unittest.TestCase):
     def test_status_tolerates_hand_edited_entries(self):
         with tempfile.TemporaryDirectory() as tmp:

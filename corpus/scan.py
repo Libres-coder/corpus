@@ -18,7 +18,7 @@ IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
                # agent state and machine-produced evidence are not documents a
                # human maintains; scanning them produced a wall of fake orphans
                ".claude", ".cursor", ".agents", ".projtruth", ".remember",
-               "testdata", "fixtures"}
+               ".lifecycle", "testdata", "fixtures"}
 SKIP_NAMES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "SOURCE.md")
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
@@ -38,7 +38,8 @@ PATHY_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb",
 
 KIND_RULES = [
     ("readme", lambda p: os.path.basename(p).upper().startswith("README")),
-    ("skill", lambda p: os.path.basename(p) == "SKILL.md"),
+    # kind_of lowercases the path before matching, so compare lowercased.
+    ("skill", lambda p: os.path.basename(p) == "skill.md"),
     ("changelog", lambda p: os.path.basename(p).upper().startswith("CHANGELOG")),
     ("contributing", lambda p: os.path.basename(p).upper().startswith("CONTRIBUTING")),
     ("plan", lambda p: "/plans/" in p or "/plan/" in p or

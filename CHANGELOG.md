@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.2] - 2026-11-13
+
+### Fixed
+- `SKILL.md` was never classified as a skill: the rule compared against
+  "SKILL.md" after the path had been lowercased. Every skill file was treated as
+  an ordinary document, which changed its orphan status.
+- `.lifecycle/` (sibling tool state: compaction snapshots) is ignored, like
+  `.projtruth/` and `.claude/`.
+
 ## [0.1.1] - 2026-11-13
 
 ### Fixed
