@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "corpus"
+version = "0.1.0"
+description = "Govern the documents an agent writes into a repo: duplicates, orphans, stale docs, supersede/archive."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [{name = "corpus contributors"}]
+keywords = ["documentation", "claude-code", "mcp", "agents", "docs-governance", "duplicates"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Documentation",
+]
+dependencies = []
+
+[project.scripts]
+corpus = "corpus.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Libres-coder/corpus"
+
+[tool.setuptools]
+packages = ["corpus"]
