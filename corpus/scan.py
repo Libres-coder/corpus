@@ -19,7 +19,7 @@ IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
                # human maintains; scanning them produced a wall of fake orphans
                ".claude", ".cursor", ".agents", ".projtruth", ".remember",
                ".lifecycle", "testdata", "fixtures"}
-SKIP_NAMES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "SOURCE.md")
+SKIP_NAMES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "SOURCE.md", "_template.md")
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 REF_DEF_RE = re.compile(r"^[ \t]*\[(?!\^)[^\]]+\]:[ \t]*(\S+)", re.MULTILINE)

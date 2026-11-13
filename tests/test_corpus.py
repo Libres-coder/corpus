@@ -20,6 +20,16 @@ def mk(path, text, mtime=None):
 
 
 class ScanTests(unittest.TestCase):
+    def test_scaffold_templates_are_not_documents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mk(os.path.join(tmp, "docs", "story", "chapters", "_template.md"),
+               "---\nid: ch-01\n---\n")
+            mk(os.path.join(tmp, "README.md"), "# P\n")
+            paths = set(scan.scan(tmp)["artifacts"])
+            self.assertIn("README.md", paths)
+            self.assertNotIn("docs/story/chapters/_template.md", paths,
+                             "lifecycle's pack scaffold is not a document")
+
     def test_title_kind_and_links(self):
         with tempfile.TemporaryDirectory() as tmp:
             mk(os.path.join(tmp, "docs", "guide.md"),

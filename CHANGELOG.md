@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3] - 2026-11-13
+
+### Fixed
+- `_template.md` files written by `lifecycle pack init` were scanned as
+  documents, so every chapter or quest template looked like an orphan or a
+  duplicate. Scaffold templates are not documents; they are skipped now.
+
 ## [0.1.2] - 2026-11-13
 
 ### Fixed
