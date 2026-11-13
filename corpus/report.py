@@ -2,8 +2,8 @@
 
 Severity, borrowed from how people actually triage documentation:
 
-    incorrect  something is wrong - a broken reference, two copies of the same
-               text, an active document that points at a retired one
+    incorrect  something is wrong - a broken link, two copies of the same text,
+               an active document that points at a retired one
     stale      nothing is wrong yet, but the document no longer matches the
                code it describes, or another document says almost the same thing
     noise      nothing is broken; there is just too much of it - orphans,
@@ -13,6 +13,7 @@ Only `incorrect` is ever a hard gate. The rest is judgement, reported with an
 action so a human or agent can decide quickly.
 """
 import os
+import re
 import time
 
 from . import scan as scanmod
@@ -21,59 +22,63 @@ from . import sim, status as statusmod
 INCORRECT, STALE, NOISE = "incorrect", "stale", "noise"
 SEVERITY_ORDER = {INCORRECT: 0, STALE: 1, NOISE: 2}
 INDEX_NAMES = ("readme.md", "index.md", "readme", "index")
+MIN_NEAR_DUP_CHARS = 400          # shorter files collide by accident
 
 
 def _is_index(rel):
     return os.path.basename(rel).lower() in INDEX_NAMES
 
 
-def _reading_cost(chars):
-    return int(chars / 4.0)
+def _keep(paths, back):
+    """Which copy to keep: the most linked one, then non-scratch, then shortest."""
+    return sorted(paths, key=lambda p: (-len(back.get(p, [])),
+                                        scanmod.is_scratch(p), len(p), p))[0]
 
 
-def _exact_duplicates(index):
+def _exact_duplicates(index, back):
     out = []
-    for sha, paths in index["by_sha"].items():
+    for paths in index["by_sha"].values():
         if len(paths) < 2:
             continue
-        paths = sorted(paths)
-        keep = next((p for p in paths if not scanmod.is_scratch(p)), paths[0])
-        for p in paths:
+        keep = _keep(paths, back)
+        for p in sorted(paths):
             if p != keep:
                 out.append({"severity": INCORRECT, "kind": "duplicate-exact",
                             "path": p, "other": keep,
                             "detail": "byte-identical to %s" % keep,
-                            "action": "delete %s, keep %s" % (p, keep)})
+                            "action": "keep %s, archive %s" % (keep, p)})
     return out
 
 
-def _near_duplicates(index, threshold):
+def _near_duplicates(index, threshold, back):
     if len(index["artifacts"]) < 2:
         return []
     texts = {}
     for rel in index["artifacts"]:
         text = scanmod.read_text(os.path.join(index["root"], rel))
-        if text is not None and len(text) > 400:      # short files collide by accident
+        if text is not None and len(text) > MIN_NEAR_DUP_CHARS:
             texts[rel] = text
     out = []
     for a, b, score in sim.near_duplicates(texts, threshold):
         if index["artifacts"][a]["sha"] == index["artifacts"][b]["sha"]:
             continue                                   # already reported exactly
-        keep, drop = sorted([a, b], key=lambda p: (-index["artifacts"][p]["chars"], p))
+        keep = _keep([a, b], back)
+        drop = b if keep == a else a
         sev = INCORRECT if score >= 0.85 else STALE
         out.append({"severity": sev, "kind": "duplicate-near", "path": drop,
                     "other": keep, "score": score,
                     "detail": "%.0f%% similar to %s" % (score * 100, keep),
-                    "action": "merge %s into %s, then archive %s" % (drop, keep, drop)})
+                    "action": "merge %s into %s, then supersede %s --by %s"
+                              % (drop, keep, drop, keep)})
     return out
 
 
 def _orphans(index, back, status_data):
-    mentioned = []
-    for rel, rec in index["artifacts"].items():
+    index_texts = []
+    for rel in index["artifacts"]:
         if _is_index(rel):
             text = scanmod.read_text(os.path.join(index["root"], rel)) or ""
-            mentioned.append(text)
+            index_texts.append(text)
     out = []
     for rel, rec in index["artifacts"].items():
         if _is_index(rel) or rec["kind"] in ("readme", "skill", "changelog", "contributing"):
@@ -83,10 +88,12 @@ def _orphans(index, back, status_data):
         if back.get(rel):
             continue
         base = os.path.basename(rel)
-        if any(base in text or rel in text for text in mentioned):
+        # A bare substring match made "plan.md" mentioned by "masterplan.md".
+        rx = re.compile(r"(?<![\w.-])%s(?![\w.-])" % re.escape(base))
+        if any(rx.search(text) for text in index_texts):
             continue
         out.append({"severity": NOISE, "kind": "orphan", "path": rel,
-                    "detail": "nothing links to it, no index mentions it",
+                    "detail": "nothing links to it, no index names it",
                     "action": "link it from an index, merge it, or archive it"})
     return out
 
@@ -95,7 +102,8 @@ def _stale(index, days=7):
     """A document older than the code it points at, by at least `days`.
 
     Same-day drift is usually work in progress; a week of silence is drift.
-    Changelogs are historical by nature and never count.
+    Changelogs are historical by nature and never count. A reference that no
+    longer exists is not reported here - only a reference that changed.
     """
     out = []
     arts = index["artifacts"]
@@ -106,11 +114,16 @@ def _stale(index, days=7):
         newest = 0.0
         exists = 0
         for ref in rec["refs"]:
-            for cand in (os.path.join(index["root"], ref),
-                         os.path.join(index["root"], os.path.dirname(rel), ref)):
+            # doc-relative first: a doc in docs/ that says `config.md` means
+            # docs/config.md, not the root config.md.
+            for cand in (os.path.join(index["root"], os.path.dirname(rel), ref),
+                         os.path.join(index["root"], ref)):
                 if os.path.exists(cand):
                     exists += 1
-                    newest = max(newest, os.path.getmtime(cand))
+                    try:
+                        newest = max(newest, os.path.getmtime(cand))
+                    except OSError:
+                        pass
                     break
         if exists and newest > rec["mtime"] + gap:
             out.append({"severity": STALE, "kind": "stale", "path": rel,
@@ -130,8 +143,9 @@ def _broken(index, repo):
                     "kind": "broken-link", "path": rel,
                     "detail": "links to missing local target(s): %s"
                               % ", ".join(missing[:5]),
-                    "action": "fix the link target, or archive the note if it was "
-                              "copied from another project"})
+                    "action": ("fix the link target, or archive the note if it was "
+                               "copied from another project" if note else
+                               "fix the link target, or remove the link")})
     return out
 
 
@@ -159,15 +173,11 @@ def _scratch(index):
 
 def _sprawl(index, min_docs=8):
     dirs = {}
-    for rel, rec in index["artifacts"].items():
-        d = os.path.dirname(rel) or "."
-        dirs.setdefault(d, []).append(rel)
+    for rel in index["artifacts"]:
+        dirs.setdefault(os.path.dirname(rel) or ".", []).append(rel)
     out = []
     for d, paths in sorted(dirs.items()):
-        if len(paths) < min_docs:
-            continue
-        has_index = any(_is_index(p) for p in paths)
-        if has_index:
+        if len(paths) < min_docs or any(_is_index(p) for p in paths):
             continue
         out.append({"severity": NOISE, "kind": "no-index", "path": d,
                     "detail": "%d documents, none of them an index" % len(paths),
@@ -175,20 +185,30 @@ def _sprawl(index, min_docs=8):
     return out
 
 
-def analyze(repo, index=None, status_data=None, threshold=0.7, stale_days=7):
+def analyze(repo, index=None, status_data=None, threshold=0.7, stale_days=7,
+            globs=None, ignore=()):
     repo = os.path.abspath(repo)
-    index = index or scanmod.scan(repo)
+    if index is None:
+        if globs:
+            index = scanmod.scan(repo, globs, ignore)
+        else:
+            index = scanmod.scan(repo, extra_ignore=ignore)
     status_data = status_data or statusmod.load(repo)
     back = scanmod.inbound(index)
     findings = []
-    findings += _exact_duplicates(index)
-    findings += _near_duplicates(index, threshold)
+    findings += _exact_duplicates(index, back)
+    findings += _near_duplicates(index, threshold, back)
     findings += _broken(index, repo)
     findings += _links_to_retired(index, status_data)
     findings += _stale(index, stale_days)
     findings += _orphans(index, back, status_data)
     findings += _scratch(index)
     findings += _sprawl(index)
+    # One file, one finding: a duplicate that is also an orphan and a scratch
+    # file is three lines saying "deal with this copy".
+    duplicated = set(f["path"] for f in findings if f["kind"].startswith("duplicate"))
+    findings = [f for f in findings
+                if not (f["path"] in duplicated and f["kind"] in ("orphan", "scratch"))]
     for f in findings:
         if statusmod.status_of(status_data, f["path"]) != "active" and f["severity"] != INCORRECT:
             f["severity"] = NOISE
@@ -204,7 +224,7 @@ def metrics(result):
     return {
         "artifacts": len(arts),
         "chars": total_chars,
-        "reading_tokens": _reading_cost(total_chars),
+        "reading_tokens": int(total_chars / 4.0),
         "kinds": _counts(r["kind"] for r in arts.values()),
         "severity": _counts(f["severity"] for f in findings),
         "orphan_rate": round(len([f for f in findings if f["kind"] == "orphan"]) /

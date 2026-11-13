@@ -24,9 +24,10 @@ as the starting point, not a failure.
 Handle every one. They are small and they are the only things that actively
 mislead.
 
-- **exact duplicates** - pick the survivor by which path is linked from
-  somewhere else, or by the shorter path. `git log --follow` on both says which
-  one is a copy. Merge, fix links, delete.
+- **exact and near duplicates** - the report names the keeper (most linked,
+  then non-scratch, then shortest path). `git log --follow` on both says which
+  one is a copy. Merge anything the keeper is missing, fix the links, then
+  `corpus supersede the-copy --by the-keeper`.
 - **broken links** - open the file, read the sentence around the link, decide:
   fix the path, or delete the clause. A link to a document that no longer exists
   is a claim that used to be true.

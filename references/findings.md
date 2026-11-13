@@ -9,15 +9,18 @@ action is a suggestion, not a command corpus will run.
 Two files with the same bytes. One of them is a copy someone forgot.
 
 *Cause:* a copy operation, a vendored directory, or an agent recreating a file
-it could not find. *Act:* keep the one that is linked or named in an index,
-delete the other. If both are linked, fix the links first, then delete.
+it could not find. The report names the copy to keep: the most-linked one, then
+a non-scratch name, then the shortest path. *Act:* merge anything the keeper is
+missing, fix links that point at the copy, then
+`corpus supersede the-copy --by the-keeper`. Archive rather than delete unless
+you created the copy this session.
 
-### duplicate-near (>= 0.85)
+### duplicate-near (>= 0.85) - blocking
 Almost the same text: usually one was edited and the other was not. Only files
 longer than 400 characters are compared - below that, boilerplate provenance
-files and one-line stubs collide by accident. This is the
-most dangerous finding - two documents that disagree slightly and look equally
-authoritative.
+files and one-line stubs collide by accident. This is the most dangerous
+finding - two documents that disagree slightly and look equally authoritative -
+so it is `incorrect` and fails `check`, not a suggestion.
 
 *Act:* merge into the larger one, then `corpus supersede the-smaller --by
 the-larger`. Do not delete before merging: the smaller one may hold the fix.

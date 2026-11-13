@@ -6,6 +6,7 @@ decided that document A is no longer the truth, and B is.
 """
 import json
 import os
+import tempfile
 import time
 
 STATE_DIR = ".corpus"
@@ -22,40 +23,65 @@ def _path(repo):
 
 
 def _norm(rel):
-    return rel.replace("\\", "/").lstrip("./")
+    """Repo-relative, with one leading './' removed.
+
+    Not lstrip('./'): that turns '.github/x.md' into 'github/x.md' and '../x'
+    into 'x', aliasing two different files onto one entry.
+    """
+    rel = str(rel).replace("\\", "/")
+    if rel.startswith("./"):
+        rel = rel[2:]
+    return rel
+
+
+def _valid_entry(entry):
+    return (isinstance(entry, dict) and entry.get("status") in VALID
+            and (entry.get("by") is None or isinstance(entry.get("by"), str)))
 
 
 def load(repo):
     try:
         with open(_path(repo), encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, ValueError):
+    except OSError:
         return {"paths": {}}
-    if not isinstance(data, dict) or not isinstance(data.get("paths", {}), dict):
+    except ValueError:
+        return {"paths": {}}          # a damaged status file is not a crash
+    if not isinstance(data, dict) or not isinstance(data.get("paths"), dict):
         return {"paths": {}}
-    data.setdefault("paths", {})
-    return data
+    # Drop entries that would raise later: this file is hand-edited sometimes.
+    paths = dict((k, v) for k, v in data["paths"].items() if _valid_entry(v))
+    return {"paths": paths}
 
 
 def save(repo, data):
     os.makedirs(state_dir(repo), exist_ok=True)
-    tmp = _path(repo) + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
-    os.replace(tmp, _path(repo))
+    fd, tmp = tempfile.mkstemp(prefix=".status-", suffix=".tmp", dir=state_dir(repo))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+        os.replace(tmp, _path(repo))
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def set_status(repo, rel, status, by=None):
     rel = _norm(rel)
     if status not in VALID:
         return False, "invalid status %r (valid: %s)" % (status, ", ".join(VALID))
+    if ".." in rel.split("/"):
+        return False, "status paths must stay inside the repo: %s" % rel
     data = load(repo)
     entry = {"status": status, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
     if by:
         entry["by"] = _norm(by)
     data["paths"][rel] = entry
     save(repo, data)
-    return True, "%s -> %s%s" % (rel, status, (" (by %s)" % by) if by else "")
+    return True, "%s -> %s%s" % (rel, status, (" (by %s)" % entry["by"]) if by else "")
 
 
 def clear(repo, rel):

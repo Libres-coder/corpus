@@ -9,6 +9,7 @@ import fnmatch
 import hashlib
 import os
 import re
+import urllib.parse
 
 DEFAULT_GLOBS = ("**/*.md",)
 IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
@@ -18,21 +19,18 @@ IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
                # human maintains; scanning them produced a wall of fake orphans
                ".claude", ".cursor", ".agents", ".projtruth", ".remember",
                "testdata", "fixtures"}
-# Files that are part of a project's skeleton: they are never "orphans", and a
-# duplicate of one of them is always a copy problem.
-CANONICAL_NAMES = ("README.md", "SKILL.md", "LICENSE", "CHANGELOG.md",
-                   "CONTRIBUTING.md", "AGENTS.md", "CLAUDE.md", "index.md",
-                   "INDEX.md")
 SKIP_NAMES = ("LICENSE", "LICENSE.md", "LICENSE.txt")
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+REF_DEF_RE = re.compile(r"^[ \t]*\[(?!\^)[^\]]+\]:[ \t]*(\S+)", re.MULTILINE)
+HREF_RE = re.compile(r"""(?:href|src)\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 HEADING_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
-FM_RE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
 CODE_RE = re.compile(r"`([^`\n]+)`")
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 
 SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
-PATHY_RE = re.compile(r"[A-Za-z0-9_.\-/\\]+\.[A-Za-z0-9]{1,8}$")
+BAD_PATH_CHARS = re.compile(r"[\s\"'<>|*?]")
 PATHY_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb",
              ".sh", ".ps1", ".md", ".json", ".yml", ".yaml", ".toml", ".ini",
              ".cfg", ".txt", ".css", ".scss", ".html", ".sql", ".c", ".h",
@@ -82,16 +80,25 @@ def read_text(path):
 
 
 def parse_frontmatter(text):
-    m = FM_RE.match(text)
-    if not m:
+    """A leading --- block, but only if it closes within 40 lines and looks like
+    key: value. A document that opens with a thematic rule then has another ---
+    later must not be eaten as frontmatter."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
         return {}, text
-    fm = {}
-    for line in m.group(1).splitlines():
-        if ":" not in line or line.lstrip().startswith("#"):
-            continue
-        key, _, value = line.partition(":")
-        fm[key.strip().lower()] = value.strip().strip("'\"")
-    return fm, text[m.end():]
+    for i in range(1, min(len(lines), 40)):
+        if lines[i].strip() == "---":
+            block = lines[1:i]
+            if not any(":" in line for line in block if line.strip()):
+                return {}, text
+            fm = {}
+            for line in block:
+                if ":" not in line or line.lstrip().startswith("#"):
+                    continue
+                key, _, value = line.partition(":")
+                fm[key.strip().lower()] = value.strip().strip("'\"")
+            return fm, "\n".join(lines[i + 1:])
+    return {}, text
 
 
 def title_of(rel, body, fm):
@@ -105,9 +112,20 @@ def title_of(rel, body, fm):
 
 
 def _resolve(src_rel, target):
-    """A markdown link target -> repo-relative path, or None if external."""
-    t = target.strip().strip("<>").strip()
-    if not t or t.startswith("#") or SCHEME_RE.match(t):
+    """A link target -> repo-relative path, or None if external / outside the repo."""
+    t = target.strip()
+    if t.startswith("<") and ">" in t:
+        t = t[1:t.index(">")]
+    else:
+        # `(path "title")` - strip a trailing quoted title, but keep spaces that
+        # are part of the path (people write [x](my file.md) and it links).
+        m = re.match(r'^(.*?)\s+["\']([^"\']*)["\']$', t)
+        if m:
+            t = m.group(1)
+    t = urllib.parse.unquote(t)
+    if not t or "[" in t or "]" in t:
+        return None                  # a placeholder: [Author/Org]
+    if t.startswith("#") or SCHEME_RE.match(t):
         return None
     t = t.split("#", 1)[0].split("?", 1)[0]
     t = t.replace("\\", "/")
@@ -115,22 +133,35 @@ def _resolve(src_rel, target):
         return None
     base = os.path.dirname(src_rel).replace("\\", "/")
     joined = t.lstrip("/") if t.startswith("/") else os.path.join(base, t)
-    return os.path.normpath(joined).replace("\\", "/")
+    joined = os.path.normpath(joined).replace("\\", "/")
+    if joined == ".." or joined.startswith("../"):
+        return None                      # another checkout or a parent repo
+    return joined
 
 
 def _refs(body):
-    """Backticked code identifiers that look like repo paths."""
+    """Backticked paths that look like repo files (ASCII or CJK, no spaces)."""
     out = []
     for raw in CODE_RE.findall(body):
         t = raw.strip().replace("\\", "/")
-        if not t or " " in t or t.startswith("-") or len(t) > 120:
+        if not t or len(t) > 120 or BAD_PATH_CHARS.search(t):
             continue
-        ext = os.path.splitext(t)[1].lower()
-        if ext in PATHY_EXT and PATHY_RE.match(t):
+        if os.path.splitext(t)[1].lower() in PATHY_EXT:
             # strip one "./" - not every leading dot: ".projtruth/x.json" is a
             # real path, and lstrip("./") would mangle it into "projtruth/...".
             out.append(t[2:] if t.startswith("./") else t)
     return sorted(set(out))
+
+
+def _link_targets(body):
+    """Every local-link candidate: markdown links, reference definitions, HTML.
+
+    Fenced blocks and inline code are blanked first - a link inside a sample is
+    an example, not a link, and reporting it as broken was the first dogfood's
+    biggest false positive.
+    """
+    text = INLINE_CODE_RE.sub(" ", FENCE_RE.sub(" ", body))
+    return LINK_RE.findall(text) + REF_DEF_RE.findall(text) + HREF_RE.findall(text)
 
 
 def _match(rel, base, glob):
@@ -146,9 +177,12 @@ def iter_files(repo, globs=DEFAULT_GLOBS, extra_ignore=()):
     for root, dirs, files in os.walk(repo):
         dirs[:] = sorted(d for d in dirs if d not in ignore)
         for f in sorted(files):
-            rel = os.path.relpath(os.path.join(root, f), repo).replace("\\", "/")
+            full = os.path.join(root, f)
+            if os.path.islink(full):
+                continue                 # a symlinked copy is not a second document
+            rel = os.path.relpath(full, repo).replace("\\", "/")
             base = os.path.basename(rel)
-            if base in SKIP_NAMES or base.upper().startswith("LICENSE"):
+            if base.upper().startswith("LICENSE"):
                 continue
             if any(_match(rel, base, g) for g in globs):
                 yield rel
@@ -158,9 +192,14 @@ def scan(repo, globs=DEFAULT_GLOBS, extra_ignore=()):
     """Return {"root", "artifacts": {rel: record}, "by_sha": {sha: [rel]}}."""
     artifacts = {}
     for rel in iter_files(repo, globs, extra_ignore):
-        text = read_text(os.path.join(repo, rel))
+        full = os.path.join(repo, rel)
+        text = read_text(full)
         if text is None:
             continue
+        try:
+            mtime = os.path.getmtime(full)
+        except OSError:
+            continue                 # vanished between listing and stat
         fm, body = parse_frontmatter(text)
         rec = {
             "path": rel,
@@ -169,17 +208,17 @@ def scan(repo, globs=DEFAULT_GLOBS, extra_ignore=()):
             "sha": sha_of(text),
             "chars": len(text),
             "lines": text.count("\n") + 1,
-            "mtime": os.path.getmtime(os.path.join(repo, rel)),
+            "mtime": mtime,
             "scratch": is_scratch(rel),
             "links_out": [],
             "refs": _refs(body),
         }
-        # A link inside a fenced block is sample output, not a link.
-        for target in LINK_RE.findall(FENCE_RE.sub(" ", body)):
+        targets = []
+        for target in _link_targets(body):
             resolved = _resolve(rel, target)
             if resolved:
-                rec["links_out"].append(resolved)
-        rec["links_out"] = sorted(set(rec["links_out"]))
+                targets.append(resolved)
+        rec["links_out"] = sorted(set(targets))
         artifacts[rel] = rec
     by_sha = {}
     for rel, rec in artifacts.items():
@@ -220,9 +259,8 @@ def inbound(index):
 def broken_links(index, repo):
     """{path: [missing targets]} - *links* whose local target does not exist.
 
-    Only markdown links count. A backticked name in prose is usually an example
-    ("name the file R3-x.md"), and treating those as broken made the first
-    dogfood run 90% false positives.
+    Only links count (markdown, reference definitions, HTML). A backticked name
+    in prose is usually an example ("name the file R3-x.md").
     """
     out = {}
     for rel, rec in index["artifacts"].items():

@@ -56,7 +56,8 @@ def cmd_scan(repo, args):
 
 def cmd_report(repo, args):
     result = reportmod.analyze(repo, status_data=statusmod.load(repo),
-                               threshold=args.threshold, stale_days=args.stale_days)
+                               threshold=args.threshold, stale_days=args.stale_days,
+                               globs=args.glob, ignore=args.ignore)
     # report never writes into the scanned tree; `corpus scan` is the only writer.
     if args.json:
         _utf8()
@@ -79,7 +80,14 @@ def cmd_find(repo, args):
             continue
         scored.append((sim.score_against(args.query, text), rel))
     scored.sort(reverse=True)
-    hits = [s for s in scored if s[0] > 0][:args.limit]
+    hits = [s for s in scored if s[0] > 0]
+    # Recommending a retired document is how superseded work comes back.
+    active = [h for h in hits if statusmod.status_of(status_data, h[1]) == "active"]
+    retired_note = ""
+    if not active and hits:
+        retired_note = ("\nAll matches are retired - run `corpus retired` and read the "
+                        "replacement before reusing any of them.")
+    hits = (active or hits)[:args.limit]
     if not hits:
         print("No artifact covers %r. A new document is justified." % args.query)
         return 0
@@ -97,21 +105,24 @@ def cmd_find(repo, args):
         print("\nRelated work exists; say in the new document what it adds.")
     else:
         print("\nOnly loosely related - a new document is reasonable.")
+    if retired_note:
+        print(retired_note)
     return 0
 
 
 def cmd_dupes(repo, args):
     index = scanmod.scan(repo, args.glob, args.ignore)
-    exact = reportmod._exact_duplicates(index)
-    near = reportmod._near_duplicates(index, args.threshold)
+    back = scanmod.inbound(index)
+    exact = reportmod._exact_duplicates(index, back)
+    near = reportmod._near_duplicates(index, args.threshold, back)
     _utf8()
     if not exact and not near:
-        print("No duplicate artifacts at threshold %.2f." % args.threshold)
+        print("No duplicate artifacts found at threshold %.2f." % args.threshold)
         return 0
     for f in exact:
-        print("[exact] %s == %s" % (f["path"], f["other"]))
+        print("[exact] keep %s, archive %s" % (f["other"], f["path"]))
     for f in near:
-        print("[%.2f] %s  ~  %s" % (f["score"], f["path"], f["other"]))
+        print("[%.2f] merge %s into %s" % (f["score"], f["path"], f["other"]))
     print("\n%d exact, %d near-duplicate pair(s)." % (len(exact), len(near)))
     return 0
 
@@ -151,7 +162,8 @@ def cmd_retired(repo, args):
 
 def cmd_check(repo, args):
     result = reportmod.analyze(repo, status_data=statusmod.load(repo),
-                               threshold=args.threshold, stale_days=args.stale_days)
+                               threshold=args.threshold, stale_days=args.stale_days,
+                               globs=args.glob, ignore=args.ignore)
     findings = result["findings"]
     incorrect = [f for f in findings if f["severity"] == reportmod.INCORRECT]
     stale = [f for f in findings if f["severity"] == reportmod.STALE]
@@ -203,9 +215,14 @@ def main(argv=None):
 
     args = ap.parse_args(argv)
     _utf8()
-    if args.glob is None:
-        args.glob = list(scanmod.DEFAULT_GLOBS)
+    # --glob adds to the defaults: `--glob "**/*.mdx"` must not silently stop
+    # seeing every .md file.
+    extra = [g for g in (args.glob or []) if g not in scanmod.DEFAULT_GLOBS]
+    args.glob = list(scanmod.DEFAULT_GLOBS) + extra
     repo = os.path.abspath(args.repo)
+    if not os.path.isdir(repo):
+        sys.stderr.write("corpus: --repo is not a directory: %s\n" % repo)
+        return 2
 
     handlers = {"scan": cmd_scan, "report": cmd_report, "find": cmd_find,
                 "dupes": cmd_dupes, "supersede": cmd_supersede,
