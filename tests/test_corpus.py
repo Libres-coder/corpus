@@ -40,6 +40,23 @@ class ScanTests(unittest.TestCase):
             self.assertNotIn("docs/story/chapters/_template.md", paths,
                              "lifecycle's pack scaffold is not a document")
 
+    def test_exists_exact_keeps_the_case_of_the_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mk(os.path.join(tmp, "docs", "Guide.md"), "# G\n")
+            self.assertTrue(scan.exists_exact(tmp, "docs/Guide.md"))
+            self.assertFalse(scan.exists_exact(tmp, "docs/guide.md"),
+                             "Windows would resolve this; Linux and CI do not")
+            self.assertFalse(scan.exists_exact(tmp, "docs/Guide.md/nested"))
+
+    def test_a_link_with_the_wrong_case_is_broken(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mk(os.path.join(tmp, "docs", "Guide.md"), "# G\n")
+            mk(os.path.join(tmp, "README.md"), "# P\n\n[g](docs/guide.md)\n")
+            result = report.analyze(tmp)
+            hits = [f for f in result["findings"] if f["kind"] == "broken-link"]
+            self.assertTrue(hits, result["findings"])
+            self.assertIn("docs/guide.md", hits[0]["detail"])
+
     def test_title_kind_and_links(self):
         with tempfile.TemporaryDirectory() as tmp:
             mk(os.path.join(tmp, "docs", "guide.md"),

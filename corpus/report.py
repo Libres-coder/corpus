@@ -117,12 +117,19 @@ def _stale(index, days=7):
         for ref in rec["refs"]:
             # doc-relative first: a doc in docs/ that says `config.md` means
             # docs/config.md, not the root config.md.
-            for cand in (os.path.join(index["root"], os.path.dirname(rel), ref),
-                         os.path.join(index["root"], ref)):
-                if os.path.exists(cand):
+            for cand in (os.path.normpath(os.path.join(os.path.dirname(rel), ref))
+                         .replace("\\", "/"),
+                         os.path.normpath(ref).replace("\\", "/")):
+                absolute = (cand if os.path.isabs(cand)
+                            else os.path.join(index["root"], *cand.split("/")))
+                if os.path.isabs(cand) or cand == ".." or cand.startswith("../"):
+                    found = os.path.exists(absolute)
+                else:
+                    found = scanmod.exists_exact(index["root"], cand)
+                if found:
                     exists += 1
                     try:
-                        newest = max(newest, os.path.getmtime(cand))
+                        newest = max(newest, os.path.getmtime(absolute))
                     except OSError:
                         pass
                     break
@@ -208,7 +215,7 @@ def _missing_refs(index, repo):
         for ref in rec.get("refs") or []:
             if ref not in deleted:
                 continue
-            if any(os.path.exists(os.path.join(d, *ref.split("/")))
+            if any(scanmod.exists_exact(d, ref)
                    for d in (repo, base)):
                 continue                     # deleted once, restored since
             if ref in (rec.get("links_out") or []):

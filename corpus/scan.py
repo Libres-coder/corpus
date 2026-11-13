@@ -260,6 +260,27 @@ def inbound(index):
     return back
 
 
+def exists_exact(base, rel):
+    """`os.path.exists` with the case sensitivity of a Linux checkout.
+
+    Windows resolves `docs/Guide.md` for `docs/guide.md`; git and CI do not.
+    A checker that reports a broken link on one platform and not the other is
+    reporting its host, not the repository. Walk the components and compare
+    the names `listdir` returns, which carry the real case.
+    """
+    cur = base
+    for part in rel.replace("\\", "/").split("/"):
+        if part in ("", "."):
+            continue
+        try:
+            if part not in os.listdir(cur):
+                return False
+        except OSError:
+            return False
+        cur = os.path.join(cur, part)
+    return True
+
+
 def broken_links(index, repo):
     """{path: [missing targets]} - *links* whose local target does not exist.
 
@@ -270,7 +291,7 @@ def broken_links(index, repo):
     for rel, rec in index["artifacts"].items():
         missing = []
         for dst in rec["links_out"]:
-            if not os.path.exists(os.path.join(repo, dst)):
+            if not exists_exact(repo, dst):
                 missing.append(dst)
         if missing:
             out[rel] = missing

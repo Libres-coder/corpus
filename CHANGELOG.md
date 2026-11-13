@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.6] - 2026-11-14
+
+### Fixed
+- **Local links resolve with the case of a Linux checkout, on every platform.**
+  Windows resolved `docs/Guide.md` for a link to `docs/guide.md`, so the same
+  repository passed `corpus check` locally and failed it in CI - the finding
+  was real (GitHub serves paths case-sensitively), but only one platform saw
+  it. `scan.exists_exact` walks the path components and compares the names
+  `listdir` returns; broken links, the stale-reference lookup and the
+  "deleted then restored" test all use it now. Strictly a consistency fix:
+  no new findings on the repositories this was tested against.
+
 ## [0.1.5] - 2026-11-14
 
 ### Fixed

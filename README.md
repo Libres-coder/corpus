@@ -94,6 +94,10 @@ files quote other projects; `links-retired` only looks at active sources; and a
 deleted path still listed in `.gitignore` is runtime state a document may name
 on purpose, not a document that went missing.
 
+Local links resolve with the case of a Linux checkout on every platform: a link
+to `docs/guide.md` does not find `docs/Guide.md`, because the hosted repository
+will not either.
+
 ## The state it keeps
 
 One small file, meant to be committed:
