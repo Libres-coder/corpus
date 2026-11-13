@@ -84,16 +84,23 @@ Three severities, in the order you should care:
 
 | severity | what it means | examples |
 |---|---|---|
-| **incorrect** | a reader is misled | broken local link, byte-identical copy, near-duplicate >= 85%, active doc linking a retired one |
-| **stale** | true when written, not now | the code it names changed a week later; near-duplicate 70-85% |
+| **incorrect** | a reader is misled | broken local link, byte-identical copy, near-duplicate >= 85%, active doc linking a retired one, a backticked path git deleted |
+| **stale** | true when written, not now | the code it names changed a week later (commit times when git is there); near-duplicate 70-85% |
 | **noise** | nothing is wrong, there is too much | orphan, scratch file, a directory of 12 docs with no index |
 
-`check` fails on incorrect only, by default. Two exceptions are deliberate:
+`check` fails on incorrect only, by default. Three exceptions are deliberate:
 
 - a broken link inside a `note`/`report`-kind file (anything under
   `research/`, `notes/`, `drafts/`, `examples/`, `vendor/`) is **noise** - those
   files quote other projects and their relative links were never true here;
-- `links-retired` applies to active sources only.
+- `links-retired` applies to active sources only;
+- a deleted path still listed in `.gitignore` is runtime state a document may
+  name on purpose (`.lifecycle/context.json`), not a document that went
+  missing.
+
+Local links resolve with the case of a Linux checkout on every platform: a link
+to `docs/guide.md` does not find `docs/Guide.md`, because the hosted repository
+will not either.
 
 ## Then: say when something stops being true
 

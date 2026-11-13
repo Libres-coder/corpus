@@ -72,11 +72,15 @@ pip install ~/.claude/skills/corpus        # 或者 PYTHONPATH=~/.claude/skills/
 
 | 级别 | 含义 | 例子 | 是否拦提交 |
 |---|---|---|---|
-| **incorrect** | 读者会被误导 | 坏掉的本地链接、逐字节相同的副本、相似度 ≥85%、链到已退休文档 | 拦 |
-| **stale** | 写的时候对，现在不对 | 它引用的代码一周后改了；相似度 70–85% | `--strict` 才拦 |
+| **incorrect** | 读者会被误导 | 坏掉的本地链接、逐字节相同的副本、相似度 ≥85%、链到已退休文档、指向 git 删除的文件（gitignore 的运行时路径除外） | 拦 |
+| **stale** | 写的时候对，现在不对 | 它引用的代码一周后改了（有 git 时按提交时间判断）；相似度 70–85% | `--strict` 才拦 |
 | **noise** | 没错，只是太多 | 孤儿、草稿文件、没有索引的目录 | 只报告 |
 
-两个刻意的例外：`note`/`report` 类文件（`research/`、`notes/`、`drafts/`、`examples/`、`vendor/` 下）里的坏链只算 noise，因为这些文件常在引用别的项目；`links-retired` 只看 active 的来源。
+有 git 时，stale 用提交时间：文档看最后一次提交，引用的文件看最新一次相关提交——fresh clone 里所有 mtime 都是检出时间，只看 mtime 会永远报不出漂移。未提交的修改按 mtime；非 git 目录才完全依赖 mtime。
+
+三个刻意的例外：`note`/`report` 类文件（`research/`、`notes/`、`drafts/`、`examples/`、`vendor/` 下）里的坏链只算 noise，因为这些文件常在引用别的项目；`links-retired` 只看 active 的来源；被 `.gitignore` 忽略的运行时路径（如 `.lifecycle/context.json`）即使曾在历史里出现，也不算"指向已删除文件"。
+
+本地链接在所有平台上都按 Linux 的大小写规则解析：`docs/guide.md` 找不到 `docs/Guide.md`，因为托管仓库也不会。
 
 ## 它记什么
 
