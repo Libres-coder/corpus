@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -20,6 +22,14 @@ def mk(path, text, mtime=None):
 
 
 class ScanTests(unittest.TestCase):
+    def test_never_existing_example_is_not_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mk(os.path.join(tmp, "README.md"),
+               "# P\n\nPut your file at `src/foo.py`.\n")
+            result = report.analyze(tmp)
+            self.assertFalse([f for f in result["findings"]
+                              if f["kind"] == "missing-ref"], result["findings"])
+
     def test_scaffold_templates_are_not_documents(self):
         with tempfile.TemporaryDirectory() as tmp:
             mk(os.path.join(tmp, "docs", "story", "chapters", "_template.md"),
@@ -196,6 +206,32 @@ class GateTests(unittest.TestCase):
             self.assertEqual(cli.main(["--repo", tmp, "check", "--stale-days", "7"]), 0)
             self.assertEqual(cli.main(["--repo", tmp, "check", "--strict",
                                        "--stale-days", "7"]), 1)
+
+
+class MissingRefTests(unittest.TestCase):
+    GIT = shutil.which("git")
+
+    def _git(self, tmp, *args):
+        subprocess.run([self.GIT, "-C", tmp] + list(args), check=True,
+                       capture_output=True, text=True)
+
+    @unittest.skipUnless(GIT, "git not installed")
+    def test_a_deleted_file_still_named_is_incorrect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._git(tmp, "init", "-q")
+            self._git(tmp, "config", "user.email", "t@example.com")
+            self._git(tmp, "config", "user.name", "t")
+            mk(os.path.join(tmp, "src", "app.py"), "x = 1\n")
+            self._git(tmp, "add", "-A")
+            self._git(tmp, "commit", "-qm", "add")
+            self._git(tmp, "rm", "-q", "src/app.py")
+            self._git(tmp, "commit", "-qm", "remove")
+            mk(os.path.join(tmp, "README.md"), "# P\n\nSee `src/app.py`.\n")
+            result = report.analyze(tmp)
+            hits = [f for f in result["findings"] if f["kind"] == "missing-ref"]
+            self.assertTrue(hits, result["findings"])
+            self.assertEqual(hits[0]["severity"], report.INCORRECT)
+            self.assertIn("src/app.py", hits[0]["detail"])
 
 
 class CliTests(unittest.TestCase):

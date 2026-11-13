@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.4] - 2026-11-14
+
+### Added
+- **A document that still names a file deleted from the repository is
+  incorrect** (`missing-ref`). It is judged against the paths git says were
+  deleted, so a README's `src/foo.py` example is not flagged - the first
+  version of the check did flag exactly that, and a doc checker that reports
+  examples teaches people to ignore it.
+
 ## [0.1.3] - 2026-11-13
 
 ### Fixed

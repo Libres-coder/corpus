@@ -1,2 +1,2 @@
 """corpus - govern the body of documents an agent writes into a repo."""
-__version__ = "0.1.3"
+__version__ = "0.1.4"

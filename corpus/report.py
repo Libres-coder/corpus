@@ -14,6 +14,7 @@ action so a human or agent can decide quickly.
 """
 import os
 import re
+import subprocess
 import time
 
 from . import scan as scanmod
@@ -149,6 +150,60 @@ def _broken(index, repo):
     return out
 
 
+def _deleted_paths(repo):
+    """Every path git has ever deleted. The precise evidence that a reference
+    points at something that used to exist, rather than at an example."""
+    try:
+        p = subprocess.run(["git", "-C", repo, "log", "--all", "--pretty=format:",
+                            "--name-only", "--diff-filter=D"],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if p.returncode != 0:
+        return set()
+    return set(line.strip().replace("\\", "/")
+               for line in (p.stdout or "").splitlines() if line.strip())
+
+
+def _missing_refs(index, repo):
+    """A backticked path the repository deleted, still named by a document.
+
+    Judged only against files git says once existed: a README that says "put
+    your file at `src/foo.py`" has broken no promise, and the first version of
+    this check flagged exactly that. A document that points at a file deleted
+    from the repository sends the reader to a dead end.
+    """
+    deleted = _deleted_paths(repo)
+    if not deleted:
+        return []
+    out = []
+    for rel, rec in index["artifacts"].items():
+        base = os.path.dirname(rel)
+        for ref in rec.get("refs") or []:
+            if ref not in deleted:
+                continue
+            if any(os.path.exists(os.path.join(d, *ref.split("/")))
+                   for d in (repo, base)):
+                continue                     # deleted once, restored since
+            if ref in (rec.get("links_out") or []):
+                continue                     # the link check already reports it
+            out.append({"severity": INCORRECT, "kind": "missing-ref", "path": rel,
+                        "other": ref,
+                        "detail": "refers to `%s`, which was deleted from the "
+                                  "repository" % ref,
+                        "action": "update the reference, or restore the file - a "
+                                  "document that points at a deleted file sends "
+                                  "the reader to a dead end"})
+    seen, uniq = set(), []
+    for f in out:
+        key = (f["path"], f["other"])
+        if key not in seen:
+            seen.add(key)
+            uniq.append(f)
+    return uniq
+
+
 def _links_to_retired(index, status_data):
     out = []
     for rel, rec in index["artifacts"].items():
@@ -199,6 +254,7 @@ def analyze(repo, index=None, status_data=None, threshold=0.7, stale_days=7,
     findings += _exact_duplicates(index, back)
     findings += _near_duplicates(index, threshold, back)
     findings += _broken(index, repo)
+    findings += _missing_refs(index, repo)
     findings += _links_to_retired(index, status_data)
     findings += _stale(index, stale_days)
     findings += _orphans(index, back, status_data)
