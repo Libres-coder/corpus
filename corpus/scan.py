@@ -278,7 +278,7 @@ def exists_exact(base, rel):
         except OSError:
             return False
         cur = os.path.join(cur, part)
-    return True
+    return os.path.exists(cur)          # a dangling symlink is not a target
 
 
 def broken_links(index, repo):

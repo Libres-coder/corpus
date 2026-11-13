@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.7] - 2026-11-14
+
+### Fixed
+- A link to a dangling symlink is broken again. `exists_exact` compares the
+  names `listdir` returns (so case is exact on every platform), but a name is
+  not a target: the final component is now checked with `os.path.exists`, so
+  the 0.1.6 case fix does not silently start accepting a symlink whose target
+  is gone.
+
 ## [0.1.6] - 2026-11-14
 
 ### Fixed
