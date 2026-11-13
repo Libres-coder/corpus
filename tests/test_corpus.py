@@ -234,6 +234,24 @@ class MissingRefTests(unittest.TestCase):
             self.assertIn("src/app.py", hits[0]["detail"])
 
 
+    @unittest.skipUnless(GIT, "git not installed")
+    def test_a_deleted_then_restored_file_is_not_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._git(tmp, "init", "-q")
+            self._git(tmp, "config", "user.email", "t@example.com")
+            self._git(tmp, "config", "user.name", "t")
+            mk(os.path.join(tmp, "src", "app.py"), "x = 1\n")
+            self._git(tmp, "add", "-A")
+            self._git(tmp, "commit", "-qm", "add")
+            self._git(tmp, "rm", "-q", "src/app.py")
+            self._git(tmp, "commit", "-qm", "remove")
+            mk(os.path.join(tmp, "src", "app.py"), "x = 2\n")
+            mk(os.path.join(tmp, "README.md"), "# P\n\nSee `src/app.py`.\n")
+            result = report.analyze(tmp)
+            self.assertFalse([f for f in result["findings"]
+                              if f["kind"] == "missing-ref"], result["findings"])
+
+
 class CliTests(unittest.TestCase):
     def test_find_and_dupes(self):
         with tempfile.TemporaryDirectory() as tmp:
