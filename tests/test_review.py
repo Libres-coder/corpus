@@ -65,6 +65,14 @@ class LinkParsingTests(unittest.TestCase):
             self.assertEqual(sorted(scan.scan(tmp)["artifacts"]), ["AGENTS.md"])
 
 
+class ScratchRuleTests(unittest.TestCase):
+    def test_real_documents_are_not_scratch(self):
+        for name in ("copy-voice.md", "api-status-copy.md", "notes.md", "guide.md"):
+            self.assertFalse(scan.is_scratch(name), name)
+        for name in ("tmp-notes.md", "draft-plan.md", "wip.md", "old-notes.md"):
+            self.assertTrue(scan.is_scratch(name), name)
+
+
 class StatusRobustnessTests(unittest.TestCase):
     def test_status_tolerates_hand_edited_entries(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -19,7 +19,7 @@ IGNORE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist",
                # human maintains; scanning them produced a wall of fake orphans
                ".claude", ".cursor", ".agents", ".projtruth", ".remember",
                "testdata", "fixtures"}
-SKIP_NAMES = ("LICENSE", "LICENSE.md", "LICENSE.txt")
+SKIP_NAMES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "SOURCE.md")
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 REF_DEF_RE = re.compile(r"^[ \t]*\[(?!\^)[^\]]+\]:[ \t]*(\S+)", re.MULTILINE)
@@ -62,9 +62,12 @@ def kind_of(path):
 
 
 def is_scratch(path):
-    base = os.path.basename(path).lower()
-    return base.startswith(("tmp", "temp", "scratch", "wip", "draft", "copy", "old",
-                            "backup", "untitled")) or "-copy" in base or " copy" in base
+    """A temporary-looking name. Deliberately conservative: "copy" is not in the
+    list, because copy-voice.md and api-status-copy.md are real documents - a
+    copy is caught by duplicate detection, not by its name."""
+    stem = os.path.splitext(os.path.basename(path))[0].lower()
+    return stem.startswith(("tmp", "temp", "scratch", "wip", "draft", "old",
+                            "backup", "untitled"))
 
 
 def sha_of(text):
@@ -182,7 +185,7 @@ def iter_files(repo, globs=DEFAULT_GLOBS, extra_ignore=()):
                 continue                 # a symlinked copy is not a second document
             rel = os.path.relpath(full, repo).replace("\\", "/")
             base = os.path.basename(rel)
-            if base.upper().startswith("LICENSE"):
+            if base in SKIP_NAMES or base.upper().startswith("LICENSE"):
                 continue
             if any(_match(rel, base, g) for g in globs):
                 yield rel

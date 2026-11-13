@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.1] - 2026-11-13
+
+### Fixed
+- `copy-voice.md` and `api-status-copy.md` were reported as scratch files; the
+  scratch rule no longer treats "copy" as temporary (duplicate detection already
+  covers real copies).
+- `SOURCE.md` provenance files are not artifacts; scanning them produced orphan
+  findings in every vendored skill.
+
 ## [0.1.0] - 2026-11-13
 
 ### Added
